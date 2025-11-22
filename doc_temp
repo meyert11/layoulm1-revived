@@ -1,0 +1,73 @@
+import os
+import cv2
+import numpy as np
+import onnxruntime as ort
+from pdf2image import convert_from_path
+
+# --- CONFIGURATION ---
+DOCS_DIR = "/mnt/data/docs"
+MODEL_PATH = "paddle_models/cls.onnx" 
+LABEL_MAP = {0: "0°", 1: "90°", 2: "180°", 3: "270°"}
+
+# --- LOAD MODEL ---
+print(f"Loading model from {MODEL_PATH}...")
+try:
+    providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+    session = ort.InferenceSession(MODEL_PATH, providers=providers)
+    input_shape = session.get_inputs()[0].shape
+    input_h, input_w = input_shape[2], input_shape[3]
+except Exception as e:
+    print(f"Error loading model: {e}")
+    exit(1)
+
+def preprocess_image(img_array):
+    """Resize, Normalize, and Transpose for the model."""
+    img = cv2.resize(img_array, (input_w, input_h))
+    img = img.astype('float32') / 255.0
+    img -= np.array([0.485, 0.456, 0.406]) 
+    img /= np.array([0.229, 0.224, 0.225]) 
+    img = img.transpose(2, 0, 1)
+    return np.expand_dims(img, axis=0)
+
+def get_orientation(image_np):
+    """Runs inference and returns the angle label."""
+    input_tensor = preprocess_image(image_np)
+    input_name = session.get_inputs()[0].name
+    outputs = session.run(None, {input_name: input_tensor})
+    label_idx = np.argmax(outputs[0])
+    return LABEL_MAP.get(label_idx, f"Unknown ({label_idx})")
+
+# --- MAIN LOOP ---
+print(f"\nScanning all pages in: {DOCS_DIR}\n" + "-"*40)
+supported_exts = ('.png', '.jpg', '.jpeg', '.tiff', '.bmp')
+
+for filename in os.listdir(DOCS_DIR):
+    file_path = os.path.join(DOCS_DIR, filename)
+    if not os.path.isfile(file_path):
+        continue
+
+    try:
+        # --- CASE 1: PDF Files (Iterate all pages) ---
+        if filename.lower().endswith('.pdf'):
+            # Convert ALL pages (removed first_page limit)
+            pages = convert_from_path(file_path)
+            
+            for i, page in enumerate(pages):
+                # Convert PIL (RGB) -> NumPy (BGR)
+                image_np = np.array(page)
+                image_np = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
+                
+                angle = get_orientation(image_np)
+                print(f"[{angle}] \t {filename} (Page {i+1})")
+
+        # --- CASE 2: Standard Images (Single page) ---
+        elif filename.lower().endswith(supported_exts):
+            image_np = cv2.imread(file_path)
+            if image_np is not None:
+                angle = get_orientation(image_np)
+                print(f"[{angle}] \t {filename}")
+            else:
+                print(f"[SKIP] \t {filename} (Could not decode image)")
+
+    except Exception as e:
+        print(f"[ERR] \t {filename}: {str(e)}")
