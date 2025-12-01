@@ -1,6 +1,34 @@
-# Cell 1: Install dependencies with CUDA support
-# NOTE: If on Windows (PowerShell), replace 'CMAKE_ARGS...' with: $env:CMAKE_ARGS="-DGGML_CUDA=on"; pip install llama-cpp-python
-!CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python huggingface_hub
+# Cell 1: Install dependencies with specific CUDA build (Cached)
+import os
+import sys
+
+# 1. Setup Cache Settings
+# We will store the built wheel in this directory so we don't have to compile C++ every time
+wheel_cache_dir = "./llama_cpp_wheels"
+os.makedirs(wheel_cache_dir, exist_ok=True)
+
+# 2. Check for existing wheel to avoid rebuilding
+# We look for any file in that folder that looks like the llama-cpp-python wheel
+existing_wheels = [f for f in os.listdir(wheel_cache_dir) if "llama_cpp_python" in f and f.endswith(".whl")]
+
+if existing_wheels:
+    wheel_path = os.path.join(wheel_cache_dir, existing_wheels[0])
+    print(f"Found cached GPU wheel: {existing_wheels[0]}")
+    print("Installing from cache (Fast)...")
+    !pip install "{wheel_path}"
+else:
+    print("No cached wheel found. Compiling from source with CUDA support (Slow - ~5-10 mins)...")
+    print("This will be cached for future runs.")
+    
+    # Build the wheel specifically with CUDA enabled
+    # NOTE: Windows users might need to set $env:CMAKE_ARGS="-DGGML_CUDA=on" in PowerShell context manually if this fails
+    !CMAKE_ARGS="-DGGML_CUDA=on" pip wheel llama-cpp-python --wheel-dir="{wheel_cache_dir}"
+    
+    # Install the newly created wheel
+    !pip install --find-links="{wheel_cache_dir}" llama-cpp-python
+
+# 3. Install other dependencies
+!pip install huggingface_hub
 
 # Cell 2: Download Model & Initialize
 from huggingface_hub import hf_hub_download
