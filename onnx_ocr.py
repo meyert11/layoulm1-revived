@@ -1,34 +1,29 @@
-import onnxruntime as ort
-import numpy as np
-import time
+from rapidocr_onnxruntime import RapidOCR
 
-# 1. Enable Verbose Logging
-sess_options = ort.SessionOptions()
-sess_options.log_severity_level = 0  # 0 = Verbose (Prints EVERYTHING)
-
-print("Attempting to load model onto GPU...")
-
-try:
-    # We load the detection model directly to test the GPU link
-    # Adjust path if your paddle_model folder is elsewhere
-    session = ort.InferenceSession(
-        'paddle_model/det.onnx', 
-        sess_options=sess_options, 
-        providers=['CUDAExecutionProvider']
-    )
+# Initialize with your custom model paths
+engine = RapidOCR(
+    # 1. Detection Model
+    det_model_path='models/ch_PP-OCRv4_det_infer.onnx',
     
-    print("\n✅ Model loaded successfully!")
-    print(f"Active Provider: {session.get_providers()[0]}")
+    # 2. Recognition Model (and its keys file)
+    rec_model_path='models/ch_PP-OCRv4_rec_infer.onnx',
+    rec_keys_path='models/ppocr_keys_v1.txt',  # Crucial for custom rec models
     
-    # 2. Quick Dummy Inference to check speed
-    # Standard input size for detection model (1, 3, 640, 640)
-    dummy_input = {session.get_inputs()[0].name: np.random.randn(1, 3, 640, 640).astype(np.float32)}
+    # 3. Classification Model (Optional, set use_cls=True if using)
+    cls_model_path='models/ch_ppocr_mobile_v2.0_cls_infer.onnx',
     
-    start = time.time()
-    session.run(None, dummy_input)
-    print(f"Inference time: {time.time() - start:.4f}s")
+    # 4. GPU/Execution Configuration
+    use_det=True,
+    use_rec=True,
+    use_cls=False,            # Set to True if you provided a cls model
+    use_cuda=True,            # Enable GPU
+    det_use_cuda=True,        # Specific flags may be needed in some versions
+    rec_use_cuda=True,
+    cls_use_cuda=True
+)
 
-except Exception as e:
-    print("\n❌ MODEL LOAD FAILED")
-    print("Read the error logs above carefully. Look for 'lib not found' or 'symbol lookup error'.")
-    print(e)
+# Run inference
+img_path = 'test_image.jpg'
+result, elapse = engine(img_path)
+
+print(result)
